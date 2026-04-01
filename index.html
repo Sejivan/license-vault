@@ -489,37 +489,41 @@
       return;
     }
 
-    grid.innerHTML = visible.map(s => {
+    // Use numeric index as DOM key — avoids any escaping issues with Notion UUIDs
+    grid.innerHTML = visible.map((s, i) => {
+      // Find real index in subs array (visible may be filtered)
+      const idx = subs.indexOf(s);
+      const k = idx; // safe numeric key
+
       const mc = monthlyCost(s);
       const priceNote = s.renewalType === 'annual'
         ? `<span class="price-note">/ mes &nbsp;($${s.cost.toFixed(2)} anual)</span>`
         : `<span class="price-note">/ mes</span>`;
       const hasCreds = s.user || s.pass || s.notes;
-      const sid = esc(s.id);
 
       const userRow = s.user ? `
         <div class="cred-row">
           <span class="cred-label">Usuario</span>
           <span class="cred-value">${esc(s.user)}</span>
-          <button class="btn-cred-action" id="cu-${sid}" data-text="${esc(s.user)}" data-btn="cu-${sid}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
+          <button class="btn-cred-action" id="cu-${k}" data-text="${esc(s.user)}" data-btn="cu-${k}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
         </div>` : '';
 
       const passRow = s.pass ? `
         <div class="cred-row">
           <span class="cred-label">Contraseña</span>
-          <span class="cred-value masked" id="pv-${sid}" data-pass="${esc(s.pass)}">••••••••••••</span>
-          <button class="btn-cred-action" id="cp-${sid}" data-text="${esc(s.pass)}" data-btn="cp-${sid}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
-          <button class="btn-cred-action" data-id="${sid}" onclick="togglePassView(this.dataset.id,this)">Ver</button>
+          <span class="cred-value masked" id="pv-${k}" data-pass="${esc(s.pass)}">••••••••••••</span>
+          <button class="btn-cred-action" id="cp-${k}" data-text="${esc(s.pass)}" data-btn="cp-${k}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
+          <button class="btn-cred-action" data-k="${k}" onclick="togglePassView(this.dataset.k,this)">Ver</button>
         </div>` : '';
 
       const notesRow = s.notes ? `<div class="cred-notes">${esc(s.notes)}</div>` : '';
-      const credsHTML = hasCreds ? `<div class="creds-section" id="cr-${sid}">${userRow}${passRow}${notesRow}</div>` : '';
+      const credsHTML = hasCreds ? `<div class="creds-section" id="cr-${k}">${userRow}${passRow}${notesRow}</div>` : '';
 
       return `
       <div class="sub-card ${s.active ? '' : 'inactive'}">
         <div class="card-top">
           <div class="card-name">${esc(s.name)}</div>
-          <button class="badge ${s.active ? 'active' : 'inactive'}" data-id="${sid}" onclick="toggleCardStatus(this.dataset.id)" title="Clic para cambiar estado">${s.active ? 'Activa' : 'Inactiva'}</button>
+          <button class="badge ${s.active ? 'active' : 'inactive'}" data-k="${k}" onclick="toggleCardStatus(this.dataset.k)" title="Clic para cambiar estado">${s.active ? 'Activa' : 'Inactiva'}</button>
         </div>
         <div class="card-meta">
           ${s.titular ? `<span class="tag-titular">${esc(s.titular)}</span><span style="color:var(--border2)">·</span>` : ''}
@@ -528,25 +532,25 @@
         <div class="card-price">$${mc.toFixed(2)} ${priceNote}</div>
         ${credsHTML}
         <div class="card-actions">
-          ${hasCreds ? `<button class="btn-sm" data-id="${sid}" onclick="toggleCreds(this.dataset.id)">Credenciales</button>` : ''}
+          ${hasCreds ? `<button class="btn-sm" data-k="${k}" onclick="toggleCreds(this.dataset.k)">Credenciales</button>` : ''}
           ${s.cancelUrl ? `<a class="btn-sm cancel-link" href="${esc(s.cancelUrl)}" target="_blank" rel="noopener noreferrer">Cancelar ↗</a>` : ''}
           <div class="card-right-actions">
-            <button class="btn-sm" data-id="${sid}" onclick="editSub(this.dataset.id)">Editar</button>
-            <button class="btn-sm danger" data-id="${sid}" onclick="deleteSub(this.dataset.id)">Eliminar</button>
+            <button class="btn-sm" data-k="${k}" onclick="editSubByKey(this.dataset.k)">Editar</button>
+            <button class="btn-sm danger" data-k="${k}" onclick="deleteSubByKey(this.dataset.k)">Eliminar</button>
           </div>
         </div>
       </div>`;
     }).join('');
   }
 
-  // ── Card interactions ─────────────────────────────────────
-  function toggleCreds(id) {
-    const el = document.getElementById('cr-' + id);
+  // ── Card interactions (all use numeric index) ─────────────
+  function toggleCreds(k) {
+    const el = document.getElementById('cr-' + k);
     if (el) el.classList.toggle('visible');
   }
 
-  function togglePassView(id, btn) {
-    const el = document.getElementById('pv-' + id);
+  function togglePassView(k, btn) {
+    const el = document.getElementById('pv-' + k);
     if (!el) return;
     const hidden = el.classList.contains('masked');
     el.textContent = hidden ? el.dataset.pass : '••••••••••••';
@@ -554,21 +558,24 @@
     if (btn) btn.textContent = hidden ? 'Ocultar' : 'Ver';
   }
 
-  async function toggleCardStatus(id) {
-    const idx = subs.findIndex(s => s.id === id);
-    if (idx === -1) return;
-    subs[idx].active = !subs[idx].active;
+  async function toggleCardStatus(k) {
+    const s = subs[parseInt(k)];
+    if (!s) return;
+    s.active = !s.active;
     render();
     setSyncState('syncing', 'Guardando…');
     try {
-      await updateSubNotion(subs[idx]);
+      await updateSubNotion(s);
       setSyncState('ok', `Guardado · ${now()}`);
     } catch(e) {
-      subs[idx].active = !subs[idx].active; // revert
+      s.active = !s.active;
       render();
       setSyncState('error', 'Error · ' + e.message);
     }
   }
+
+  function editSubByKey(k)   { openModal(subs[parseInt(k)].id); }
+  function deleteSubByKey(k) { deleteSub(subs[parseInt(k)].id); }
 
   // ── Delete ────────────────────────────────────────────────
   function deleteSub(id) {
