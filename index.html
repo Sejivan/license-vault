@@ -314,7 +314,7 @@
 <script>
   // ── CONFIG ────────────────────────────────────────────────
   const DATABASE_ID = 'f175b725a63940ae9e24e1a2f2529528';
-  const NOTION_VERSION = '2022-06-28';
+  const PROXY_BASE  = 'https://notion-proxy.josivansanchez.workers.dev';
 
   // ── State ─────────────────────────────────────────────────
   let subs = [];
@@ -325,39 +325,23 @@
   let token = '';
 
   // ── Token management ──────────────────────────────────────
-  function getToken() { return localStorage.getItem('lv_notion_token') || ''; }
-
-  function saveToken() {
-    const val = document.getElementById('token-input').value.trim();
-    if (!val) return;
-    token = val;
-    localStorage.setItem('lv_notion_token', val);
-    document.getElementById('setup-error').style.display = 'none';
-    initApp();
-  }
-
+  function getToken() { return ''; } // Token lives in the Worker, not here
+  function saveToken() { initApp(); } // Skip token screen, go straight to app
   function resetToken() {
-    localStorage.removeItem('lv_notion_token');
-    token = '';
     document.getElementById('main-app').style.display = 'none';
     document.getElementById('setup-screen').style.display = 'flex';
-    document.getElementById('token-input').value = '';
   }
 
-  // ── Notion REST helpers ───────────────────────────────────
+  // ── Notion REST via Cloudflare Worker proxy ───────────────
   async function notionRequest(method, path, body) {
-    const res = await fetch('https://api.notion.com' + path, {
+    const res = await fetch(PROXY_BASE + path, {
       method,
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Notion-Version': NOTION_VERSION,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `Notion API ${res.status}`);
+      throw new Error(err.message || `Error ${res.status}`);
     }
     return res.json();
   }
@@ -425,13 +409,7 @@
       render();
     } catch(e) {
       console.error(e);
-      if (e.message.includes('401') || e.message.includes('unauthorized')) {
-        setSyncState('error', 'Token inválido');
-        document.getElementById('setup-error').style.display = 'block';
-        resetToken();
-      } else {
-        setSyncState('error', 'Error al cargar · ' + e.message);
-      }
+      setSyncState('error', 'Error al cargar · ' + e.message);
     }
   }
 
@@ -751,12 +729,7 @@
     await loadSubs();
   }
 
-  token = getToken();
-  if (token) {
-    initApp();
-  } else {
-    document.getElementById('setup-screen').style.display = 'flex';
-  }
+  initApp();
 </script>
 </body>
 </html>
