@@ -1,55 +1,735 @@
-const NOTION_TOKEN = 'TU_TOKEN_AQUI';
-const ALLOWED_ORIGIN = 'https://sejivan.github.io';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>License Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=IBM+Plex+Mono:wght@300;400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#f2ece0; --surface:#ede7d9; --surface2:#e5dece;
+    --border:#cfc7b4; --border2:#b8af9e;
+    --text:#1c1a16; --muted:#7a7060;
+    --orange:#c85a1e; --green:#2d7a3a; --blue:#2a4a8a; --purple:#6b3fa0; --red:#a52020;
+    --font-serif:'Playfair Display',Georgia,serif;
+    --font-mono:'IBM Plex Mono',monospace;
+    --font-sans:'IBM Plex Sans',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100vh;font-size:14px}
+  .app{max-width:1080px;margin:0 auto;padding:48px 28px 80px}
 
-export default {
-  async fetch(request) {
+  /* SETUP SCREEN */
+  .setup-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;gap:24px}
+  .setup-screen h2{font-family:var(--font-serif);font-size:28px;font-weight:900}
+  .setup-screen p{font-size:13px;color:var(--muted);max-width:440px;line-height:1.7}
+  .setup-input-row{display:flex;gap:0;width:100%;max-width:480px}
+  .setup-input-row input{flex:1;border:1.5px solid var(--border2);border-right:none;border-radius:3px 0 0 3px;padding:11px 14px;font-family:var(--font-mono);font-size:12px;background:var(--surface);color:var(--text);outline:none}
+  .setup-input-row input:focus{border-color:var(--text)}
+  .setup-input-row button{padding:11px 20px;background:var(--text);color:var(--bg);border:none;border-radius:0 3px 3px 0;font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+  .setup-input-row button:hover{background:var(--orange)}
+  .setup-hint{font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:0.06em}
+  .setup-error{color:var(--red);font-family:var(--font-mono);font-size:11px;display:none}
 
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-          'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        }
-      });
-    }
+  /* HEADER */
+  header{border-bottom:2px solid var(--text);padding-bottom:20px;margin-bottom:36px;display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  h1{font-family:var(--font-serif);font-size:clamp(32px,5vw,48px);font-weight:900;letter-spacing:-0.02em;line-height:1}
+  .header-sub{font-family:var(--font-mono);font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+  .header-right{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 
-    const url = new URL(request.url);
+  /* SYNC */
+  .sync-bar{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:0.06em}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--border2);flex-shrink:0;transition:background 0.3s}
+  .sync-dot.syncing{background:var(--orange);animation:pulse 1s infinite}
+  .sync-dot.ok{background:var(--green)}
+  .sync-dot.error{background:var(--red)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 
-    // Strip the worker path and forward to Notion
-    const notionUrl = 'https://api.notion.com' + url.pathname + url.search;
+  .btn-token-reset{font-family:var(--font-mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:4px 8px;border-radius:2px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all 0.15s}
+  .btn-token-reset:hover{color:var(--red);border-color:var(--red)}
 
-    let body = undefined;
-    if (request.method === 'POST' || request.method === 'PATCH') {
-      body = await request.text();
-    }
+  /* DASHBOARD */
+  .dashboard{display:grid;grid-template-columns:repeat(4,1fr);border:1.5px solid var(--border2);border-radius:4px;overflow:hidden;margin-bottom:36px}
+  .stat-card{padding:18px 14px 16px;border-right:1.5px solid var(--border2);background:var(--surface);overflow:hidden}
+  .stat-card:last-child{border-right:none}
+  .stat-label{font-family:var(--font-mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .stat-value{font-family:var(--font-serif);font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:clamp(20px,3vw,30px)}
+  #stat-cost{font-size:clamp(16px,2.4vw,24px)}
+  .stat-value.orange{color:var(--orange)} .stat-value.green{color:var(--green)} .stat-value.red{color:var(--red)} .stat-value.blue{color:var(--blue)}
 
-    const notionResponse = await fetch(notionUrl, {
-      method: request.method,
-      headers: {
-        'Authorization': 'Bearer ' + NOTION_TOKEN,
-        'Notion-Version': '2022-06-28',
-        'Content-Type': 'application/json',
-      },
-      body: body,
+  /* TOOLBAR */
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:24px;flex-wrap:wrap}
+  .filter-tabs{display:flex;border:1.5px solid var(--border2);border-radius:3px;overflow:hidden}
+  .filter-tab{padding:7px 16px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);background:transparent;border:none;border-right:1.5px solid var(--border2);cursor:pointer;transition:all 0.15s}
+  .filter-tab:last-child{border-right:none}
+  .filter-tab.active{background:var(--text);color:var(--bg)}
+  .filter-tab:not(.active):hover{background:var(--surface2);color:var(--text)}
+  .btn-add{margin-left:auto;padding:8px 20px;background:var(--text);color:var(--bg);border:none;border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background 0.15s;white-space:nowrap}
+  .btn-add:hover{background:var(--orange)}
+  .add-icon{width:16px;height:16px;border:1.5px solid currentColor;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;flex-shrink:0}
+
+  /* CARDS */
+  .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px}
+  .sub-card{background:var(--surface);border:1.5px solid var(--border2);border-radius:4px;padding:22px 22px 18px;transition:all 0.18s;animation:fadeIn 0.25s ease}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+  .sub-card:hover{border-color:var(--text);box-shadow:3px 3px 0 var(--border2)}
+  .sub-card.inactive{opacity:0.5}
+  .sub-card.inactive:hover{opacity:0.85}
+  .card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px}
+  .card-name{font-family:var(--font-serif);font-size:19px;font-weight:700;line-height:1.2}
+  .badge{font-family:var(--font-mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;padding:3px 8px;border-radius:2px;flex-shrink:0;margin-top:3px;cursor:pointer;transition:all 0.15s;user-select:none}
+  .badge.active{background:rgba(45,122,58,0.12);color:var(--green);border:1px solid rgba(45,122,58,0.3)}
+  .badge.inactive{background:rgba(165,32,32,0.1);color:var(--red);border:1px solid rgba(165,32,32,0.25)}
+  .badge.active:hover{background:rgba(45,122,58,0.22);border-color:var(--green)}
+  .badge.inactive:hover{background:rgba(165,32,32,0.18);border-color:var(--red)}
+  .card-meta{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .tag-titular{font-family:var(--font-mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;padding:2px 7px;border-radius:2px;background:rgba(42,74,138,0.1);color:var(--blue);border:1px solid rgba(42,74,138,0.25)}
+  .renewal-info{font-family:var(--font-mono);font-size:10px;color:var(--muted)}
+  .card-price{font-family:var(--font-serif);font-size:30px;font-weight:700;color:var(--orange);line-height:1;margin-bottom:16px}
+  .price-note{font-family:var(--font-mono);font-size:10px;color:var(--muted);font-weight:400}
+
+  /* CREDS */
+  .creds-section{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--orange);border-radius:3px;padding:12px;margin-bottom:14px;display:none}
+  .creds-section.visible{display:block}
+  .cred-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .cred-row:last-child{margin-bottom:0}
+  .cred-label{font-family:var(--font-mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);width:80px;flex-shrink:0}
+  .cred-value{font-family:var(--font-mono);font-size:12px;color:var(--text);flex:1;word-break:break-all;line-height:1.4}
+  .cred-value.masked{letter-spacing:0.2em}
+  .cred-notes{font-family:var(--font-mono);font-size:11px;color:var(--muted);line-height:1.6;white-space:pre-wrap;margin-top:6px;padding-top:8px;border-top:1px solid var(--border)}
+  .btn-cred-action{font-family:var(--font-mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:3px 7px;border-radius:2px;cursor:pointer;transition:all 0.15s;border:1px solid var(--border2);background:transparent;color:var(--muted);white-space:nowrap;flex-shrink:0}
+  .btn-cred-action:hover{color:var(--text);border-color:var(--text);background:var(--surface)}
+  .btn-cred-action.copied{color:var(--green);border-color:var(--green)}
+
+  /* CARD ACTIONS */
+  .card-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:14px}
+  .btn-sm{font-family:var(--font-mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:5px 10px;border-radius:2px;cursor:pointer;transition:all 0.15s;border:1.5px solid var(--border2);background:transparent;color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .btn-sm:hover{color:var(--text);border-color:var(--text);background:var(--surface2)}
+  .btn-sm.cancel-link{color:var(--red);border-color:rgba(165,32,32,0.3)}
+  .btn-sm.cancel-link:hover{border-color:var(--red);background:rgba(165,32,32,0.06)}
+  .btn-sm.danger:hover{color:var(--red);border-color:var(--red);background:rgba(165,32,32,0.06)}
+  .card-right-actions{margin-left:auto;display:flex;gap:6px}
+
+  /* CONFIRM */
+  .confirm-overlay{position:fixed;inset:0;background:rgba(28,26,22,0.55);backdrop-filter:blur(2px);z-index:200;display:none;align-items:center;justify-content:center;padding:24px}
+  .confirm-overlay.open{display:flex}
+  .confirm-box{background:var(--bg);border:2px solid var(--text);border-radius:4px;width:100%;max-width:380px;padding:28px 28px 24px;animation:slideUp 0.18s ease}
+  .confirm-box p{font-family:var(--font-serif);font-size:18px;font-weight:700;line-height:1.35;margin-bottom:20px}
+  .confirm-actions{display:flex;gap:10px}
+  .btn-confirm-yes{flex:1;padding:10px;background:var(--red);color:#fff;border:none;border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:opacity 0.15s}
+  .btn-confirm-yes:hover{opacity:0.85}
+  .btn-confirm-no{flex:1;padding:10px;background:transparent;color:var(--muted);border:1.5px solid var(--border2);border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:all 0.15s}
+  .btn-confirm-no:hover{border-color:var(--text);color:var(--text)}
+
+  /* MODAL */
+  .modal-overlay{position:fixed;inset:0;background:rgba(28,26,22,0.6);backdrop-filter:blur(3px);z-index:100;display:none;align-items:center;justify-content:center;padding:24px}
+  .modal-overlay.open{display:flex}
+  .modal{background:var(--bg);border:2px solid var(--text);border-radius:4px;width:100%;max-width:560px;padding:32px;position:relative;animation:slideUp 0.2s ease;max-height:92vh;overflow-y:auto}
+  @keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  .modal h2{font-family:var(--font-serif);font-size:24px;font-weight:700;margin-bottom:24px;padding-right:32px}
+  .modal-close{position:absolute;top:18px;right:18px;background:transparent;border:1.5px solid var(--border2);color:var(--muted);width:28px;height:28px;border-radius:2px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+  .modal-close:hover{border-color:var(--text);color:var(--text)}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .form-group{display:flex;flex-direction:column;gap:6px}
+  .form-group.full{grid-column:1/-1}
+  .form-section-title{grid-column:1/-1;font-family:var(--font-mono);font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);padding-top:8px;padding-bottom:2px;border-top:1px solid var(--border);margin-top:4px}
+  label{font-family:var(--font-mono);font-size:9px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted)}
+  input,select,textarea{background:var(--surface);border:1.5px solid var(--border2);border-radius:3px;padding:9px 12px;color:var(--text);font-family:var(--font-sans);font-size:13px;outline:none;transition:border-color 0.15s;width:100%}
+  input:focus,select:focus,textarea:focus{border-color:var(--text)}
+  select{cursor:pointer}
+  textarea{resize:vertical;min-height:70px}
+  .input-with-btn{display:flex}
+  .input-with-btn input{border-radius:3px 0 0 3px;border-right:none;flex:1}
+  .input-eye-btn{background:var(--surface2);border:1.5px solid var(--border2);border-left:none;border-radius:0 3px 3px 0;padding:0 12px;cursor:pointer;font-family:var(--font-mono);font-size:11px;color:var(--muted);transition:all 0.15s;white-space:nowrap;flex-shrink:0}
+  .input-eye-btn:hover{color:var(--text);background:var(--surface)}
+  .toggle-row{display:flex;align-items:center;gap:12px}
+  .toggle{width:40px;height:22px;background:var(--border2);border-radius:11px;cursor:pointer;position:relative;transition:background 0.2s;flex-shrink:0;border:none}
+  .toggle.on{background:var(--green)}
+  .toggle::after{content:'';position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:3px;left:3px;transition:transform 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+  .toggle.on::after{transform:translateX(18px)}
+  .toggle-label{font-size:12px;color:var(--muted);font-family:var(--font-sans)}
+  .form-actions{display:flex;gap:10px;margin-top:22px;padding-top:20px;border-top:1px solid var(--border)}
+  .btn-save{flex:1;padding:11px;background:var(--text);color:var(--bg);border:none;border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;transition:background 0.15s}
+  .btn-save:hover{background:var(--orange)}
+  .btn-save:disabled{opacity:0.5;cursor:not-allowed}
+  .btn-cancel-modal{padding:11px 20px;background:transparent;color:var(--muted);border:1.5px solid var(--border2);border-radius:3px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:all 0.15s}
+  .btn-cancel-modal:hover{border-color:var(--text);color:var(--text)}
+
+  /* EMPTY */
+  .empty-state{grid-column:1/-1;text-align:center;padding:80px 24px;color:var(--muted);border:1.5px dashed var(--border2);border-radius:4px}
+  .empty-icon{font-family:var(--font-serif);font-size:56px;font-weight:900;color:var(--border2);display:block;margin-bottom:16px}
+  .empty-state p{font-size:13px;line-height:1.7}
+
+  ::-webkit-scrollbar{width:5px}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+  @media(max-width:640px){
+    .dashboard{grid-template-columns:1fr 1fr}
+    .stat-card:nth-child(2){border-right:none}
+    .stat-card:nth-child(3){border-top:1.5px solid var(--border2)}
+    .form-grid{grid-template-columns:1fr}
+    .form-group.full,.form-section-title{grid-column:1}
+    header{flex-direction:column;align-items:flex-start}
+    .btn-add{margin-left:0}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SETUP SCREEN (shown until token is set) -->
+  <div class="setup-screen" id="setup-screen">
+    <div>
+      <h2>License Vault</h2>
+      <p style="margin-top:8px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted)">Conectar con Notion</p>
+    </div>
+    <p>Para conectar la app con tu base de datos de Notion, ingresa tu <strong>Integration Token</strong>. Se guarda solo en tu browser y nunca se envía a ningún servidor externo.</p>
+    <div class="setup-input-row">
+      <input type="password" id="token-input" placeholder="ntn_xxxxxxxxxxxxxxxxxxxx…" autocomplete="off">
+      <button onclick="saveToken()">Conectar</button>
+    </div>
+    <div class="setup-error" id="setup-error">Token inválido o sin acceso a la base de datos. Verifica e intenta de nuevo.</div>
+    <p class="setup-hint">Encuéntralo en notion.so/profile/integrations → tu integración → Internal Integration Secret</p>
+  </div>
+
+  <!-- MAIN APP (hidden until token is verified) -->
+  <div id="main-app" style="display:none">
+    <header>
+      <div>
+        <h1>License Vault</h1>
+        <div class="header-sub">Gestor de suscripciones &amp; licencias</div>
+      </div>
+      <div class="header-right">
+        <div class="sync-bar">
+          <span class="sync-dot" id="sync-dot"></span>
+          <span id="sync-label">Cargando…</span>
+        </div>
+        <button class="btn-token-reset" onclick="resetToken()" title="Cambiar token">Cambiar token</button>
+        <button class="btn-add" onclick="openModal()">
+          <span class="add-icon">+</span> Nueva suscripción
+        </button>
+      </div>
+    </header>
+
+    <div class="dashboard">
+      <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value blue" id="stat-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Activas</div><div class="stat-value green" id="stat-active">—</div></div>
+      <div class="stat-card"><div class="stat-label">Inactivas</div><div class="stat-value red" id="stat-inactive">—</div></div>
+      <div class="stat-card"><div class="stat-label">Costo / mes</div><div class="stat-value orange" id="stat-cost">—</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filter="all">Todas</button>
+        <button class="filter-tab" data-filter="active">Activas</button>
+        <button class="filter-tab" data-filter="inactive">Inactivas</button>
+      </div>
+    </div>
+
+    <div class="cards-grid" id="cards-grid">
+      <div class="empty-state"><span class="empty-icon">—</span><p>Cargando…</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm dialog -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <p>¿Estás seguro de que quieres eliminar esta suscripción?</p>
+    <div class="confirm-actions">
+      <button class="btn-confirm-yes" onclick="confirmDelete()">Sí, eliminar.</button>
+      <button class="btn-confirm-no" onclick="cancelDelete()">No, volver.</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit / Create modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h2 id="modal-title">Nueva suscripción</h2>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Nombre de la suscripción</label>
+        <input type="text" id="f-name" placeholder="Ej: Claude Pro, n8n Cloud…">
+      </div>
+      <div class="form-group">
+        <label>Titular</label>
+        <input type="text" id="f-titular" placeholder="Ej: Personal, Sinaaapsis…">
+      </div>
+      <div class="form-group">
+        <label>Estado</label>
+        <div class="toggle-row" style="padding-top:8px">
+          <button class="toggle on" id="f-toggle" onclick="toggleStatus()"></button>
+          <span class="toggle-label" id="f-toggle-label">Activa</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Costo</label>
+        <input type="number" id="f-cost" placeholder="0.00" step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label>Renovación</label>
+        <select id="f-renewal-type" onchange="onRenewalChange()">
+          <option value="Mensual">Mensual</option>
+          <option value="Anual">Anual</option>
+        </select>
+      </div>
+      <div class="form-group" id="wrap-monthly-day">
+        <label>Día de renovación</label>
+        <input type="number" id="f-renewal-day" placeholder="Ej: 15" min="1" max="31">
+      </div>
+      <div class="form-group" id="wrap-annual-date" style="display:none">
+        <label>Fecha de renovación</label>
+        <input type="date" id="f-renewal-date">
+      </div>
+      <div class="form-group full">
+        <label>Enlace de cancelación</label>
+        <input type="url" id="f-cancel-url" placeholder="https://…">
+      </div>
+      <div class="form-section-title">Credenciales</div>
+      <div class="form-group full">
+        <label>Usuario</label>
+        <input type="text" id="f-user" placeholder="usuario@email.com" autocomplete="off">
+      </div>
+      <div class="form-group full">
+        <label>Contraseña</label>
+        <div class="input-with-btn">
+          <input type="password" id="f-pass" placeholder="••••••••" autocomplete="off">
+          <button type="button" class="input-eye-btn" id="f-eye-btn" onclick="toggleFormPass()">Mostrar</button>
+        </div>
+      </div>
+      <div class="form-group full">
+        <label>Notas</label>
+        <textarea id="f-notes" placeholder="Notas adicionales, claves de API, etc."></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-cancel-modal" onclick="closeModal()">Cancelar</button>
+      <button class="btn-save" id="btn-save" onclick="saveSubscription()">Guardar suscripción</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── CONFIG ────────────────────────────────────────────────
+  const DATABASE_ID = 'f175b725a63940ae9e24e1a2f2529528';
+  const PROXY_BASE  = 'https://notion-proxy.josivansanchez.workers.dev';
+
+  // ── State ─────────────────────────────────────────────────
+  let subs = [];
+  let filter = 'all';
+  let editId = null;
+  let toggleState = true;
+  let pendingDeleteId = null;
+  let token = '';
+
+  // ── Token management ──────────────────────────────────────
+  function getToken() { return ''; } // Token lives in the Worker, not here
+  function saveToken() { initApp(); } // Skip token screen, go straight to app
+  function resetToken() {
+    document.getElementById('main-app').style.display = 'none';
+    document.getElementById('setup-screen').style.display = 'flex';
+  }
+
+  // ── Notion REST via Cloudflare Worker proxy ───────────────
+  async function notionRequest(method, path, body) {
+    const res = await fetch(PROXY_BASE + path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `Error ${res.status}`);
+    }
+    return res.json();
+  }
 
-    const responseText = await notionResponse.text();
+  // Map a Notion page result → our internal sub object
+  function pageToSub(page) {
+    const p = page.properties;
+    const getTitle  = k => p[k]?.title?.[0]?.plain_text || '';
+    const getText   = k => p[k]?.rich_text?.[0]?.plain_text || '';
+    const getSelect = k => p[k]?.select?.name || '';
+    const getNum    = k => p[k]?.number ?? 0;
+    const getUrl    = k => p[k]?.url || '';
+    const getDate   = k => p[k]?.date?.start || '';
 
-    return new Response(responseText, {
-      status: notionResponse.status,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
-        'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      }
+    return {
+      id:          page.id,
+      name:        getTitle('Nombre'),
+      active:      getSelect('Estado') !== 'Inactiva',
+      titular:     getText('Titular'),
+      cost:        getNum('Costo'),
+      renewalType: getSelect('Renovación') === 'Anual' ? 'annual' : 'monthly',
+      renewalDay:  getNum('Día de renovación') || '',
+      renewalDate: getDate('Fecha de renovación anual'),
+      cancelUrl:   getUrl('Enlace de cancelación'),
+      user:        getText('Usuario'),
+      pass:        getText('Contraseña'),
+      notes:       getText('Notas'),
+    };
+  }
+
+  // Map our sub object → Notion properties payload
+  function subToProperties(s) {
+    const props = {
+      'Nombre':   { title: [{ text: { content: s.name } }] },
+      'Estado':   { select: { name: s.active ? 'Activa' : 'Inactiva' } },
+      'Titular':  { rich_text: [{ text: { content: s.titular || '' } }] },
+      'Costo':    { number: parseFloat(s.cost) || 0 },
+      'Renovación': { select: { name: s.renewalType === 'annual' ? 'Anual' : 'Mensual' } },
+      'Día de renovación': { number: s.renewalType === 'monthly' && s.renewalDay ? parseInt(s.renewalDay) : null },
+      'Enlace de cancelación': { url: s.cancelUrl || null },
+      'Usuario':   { rich_text: [{ text: { content: s.user  || '' } }] },
+      'Contraseña':{ rich_text: [{ text: { content: s.pass  || '' } }] },
+      'Notas':     { rich_text: [{ text: { content: s.notes || '' } }] },
+    };
+    if (s.renewalType === 'annual' && s.renewalDate) {
+      props['Fecha de renovación anual'] = { date: { start: s.renewalDate } };
+    } else {
+      props['Fecha de renovación anual'] = { date: null };
+    }
+    return props;
+  }
+
+  // ── LOAD ──────────────────────────────────────────────────
+  async function loadSubs() {
+    setSyncState('syncing', 'Sincronizando…');
+    try {
+      const data = await notionRequest('POST', `/v1/databases/${DATABASE_ID}/query`, {
+        page_size: 100,
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }]
+      });
+      subs = data.results
+        .filter(p => !p.archived && !p.in_trash)
+        .map(pageToSub);
+      setSyncState('ok', `Sincronizado · ${now()}`);
+      render();
+    } catch(e) {
+      console.error(e);
+      setSyncState('error', 'Error al cargar · ' + e.message);
+    }
+  }
+
+  // ── CREATE ────────────────────────────────────────────────
+  async function createSub(s) {
+    const page = await notionRequest('POST', '/v1/pages', {
+      parent: { database_id: DATABASE_ID },
+      properties: subToProperties(s),
+    });
+    return page.id;
+  }
+
+  // ── UPDATE ────────────────────────────────────────────────
+  async function updateSubNotion(s) {
+    await notionRequest('PATCH', `/v1/pages/${s.id}`, {
+      properties: subToProperties(s),
     });
   }
-};
-```
 
-Reemplaza `TU_TOKEN_AQUI` con tu token de Notion (`ntn_...`) y dale **Deploy**. Luego prueba de nuevo abriendo en el browser:
-```
-https://notion-proxy.josivansanchez.workers.dev/v1/databases/f175b725a63940ae9e24e1a2f2529528/query
+  // ── DELETE (archive) ──────────────────────────────────────
+  async function deleteSubNotion(id) {
+    await notionRequest('PATCH', `/v1/pages/${id}`, { archived: true });
+  }
+
+  // ── Helpers ───────────────────────────────────────────────
+  function now() {
+    return new Date().toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function monthlyCost(s) { return s.renewalType === 'annual' ? s.cost / 12 : s.cost; }
+
+  function renewalLabel(s) {
+    if (s.renewalType === 'annual') {
+      const d = s.renewalDate ? new Date(s.renewalDate + 'T12:00:00').toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }) : '';
+      return 'Anual' + (d ? ` · ${d}` : '');
+    }
+    return 'Mensual' + (s.renewalDay ? ` · día ${s.renewalDay}` : '');
+  }
+
+  function setSyncState(state, label) {
+    document.getElementById('sync-dot').className = 'sync-dot ' + state;
+    document.getElementById('sync-label').textContent = label;
+  }
+
+  function copyText(text, btnId) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const orig = btn.textContent;
+      btn.textContent = 'Copiado';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
+    });
+  }
+
+  // ── RENDER ────────────────────────────────────────────────
+  function render() {
+    const grid = document.getElementById('cards-grid');
+    let visible = subs;
+    if (filter === 'active')   visible = subs.filter(s => s.active);
+    if (filter === 'inactive') visible = subs.filter(s => !s.active);
+
+    const active = subs.filter(s => s.active);
+    const totalCost = active.reduce((a, s) => a + monthlyCost(s), 0);
+
+    document.getElementById('stat-total').textContent    = subs.length;
+    document.getElementById('stat-active').textContent   = active.length;
+    document.getElementById('stat-inactive').textContent = subs.length - active.length;
+    document.getElementById('stat-cost').textContent     = '$' + totalCost.toFixed(2);
+
+    if (visible.length === 0) {
+      grid.innerHTML = `<div class="empty-state"><span class="empty-icon">—</span><p>No hay suscripciones aquí todavía.<br>Agrega una con el botón de arriba.</p></div>`;
+      return;
+    }
+
+    grid.innerHTML = visible.map(s => {
+      const mc = monthlyCost(s);
+      const priceNote = s.renewalType === 'annual'
+        ? `<span class="price-note">/ mes &nbsp;($${s.cost.toFixed(2)} anual)</span>`
+        : `<span class="price-note">/ mes</span>`;
+      const hasCreds = s.user || s.pass || s.notes;
+      const sid = esc(s.id);
+
+      const userRow = s.user ? `
+        <div class="cred-row">
+          <span class="cred-label">Usuario</span>
+          <span class="cred-value">${esc(s.user)}</span>
+          <button class="btn-cred-action" id="cu-${sid}" data-text="${esc(s.user)}" data-btn="cu-${sid}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
+        </div>` : '';
+
+      const passRow = s.pass ? `
+        <div class="cred-row">
+          <span class="cred-label">Contraseña</span>
+          <span class="cred-value masked" id="pv-${sid}" data-pass="${esc(s.pass)}">••••••••••••</span>
+          <button class="btn-cred-action" id="cp-${sid}" data-text="${esc(s.pass)}" data-btn="cp-${sid}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
+          <button class="btn-cred-action" data-id="${sid}" onclick="togglePassView(this.dataset.id,this)">Ver</button>
+        </div>` : '';
+
+      const notesRow = s.notes ? `<div class="cred-notes">${esc(s.notes)}</div>` : '';
+      const credsHTML = hasCreds ? `<div class="creds-section" id="cr-${sid}">${userRow}${passRow}${notesRow}</div>` : '';
+
+      return `
+      <div class="sub-card ${s.active ? '' : 'inactive'}">
+        <div class="card-top">
+          <div class="card-name">${esc(s.name)}</div>
+          <button class="badge ${s.active ? 'active' : 'inactive'}" data-id="${sid}" onclick="toggleCardStatus(this.dataset.id)" title="Clic para cambiar estado">${s.active ? 'Activa' : 'Inactiva'}</button>
+        </div>
+        <div class="card-meta">
+          ${s.titular ? `<span class="tag-titular">${esc(s.titular)}</span><span style="color:var(--border2)">·</span>` : ''}
+          <span class="renewal-info">${esc(renewalLabel(s))}</span>
+        </div>
+        <div class="card-price">$${mc.toFixed(2)} ${priceNote}</div>
+        ${credsHTML}
+        <div class="card-actions">
+          ${hasCreds ? `<button class="btn-sm" data-id="${sid}" onclick="toggleCreds(this.dataset.id)">Credenciales</button>` : ''}
+          ${s.cancelUrl ? `<a class="btn-sm cancel-link" href="${esc(s.cancelUrl)}" target="_blank" rel="noopener noreferrer">Cancelar ↗</a>` : ''}
+          <div class="card-right-actions">
+            <button class="btn-sm" data-id="${sid}" onclick="editSub(this.dataset.id)">Editar</button>
+            <button class="btn-sm danger" data-id="${sid}" onclick="deleteSub(this.dataset.id)">Eliminar</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Card interactions ─────────────────────────────────────
+  function toggleCreds(id) {
+    const el = document.getElementById('cr-' + id);
+    if (el) el.classList.toggle('visible');
+  }
+
+  function togglePassView(id, btn) {
+    const el = document.getElementById('pv-' + id);
+    if (!el) return;
+    const hidden = el.classList.contains('masked');
+    el.textContent = hidden ? el.dataset.pass : '••••••••••••';
+    el.classList.toggle('masked');
+    if (btn) btn.textContent = hidden ? 'Ocultar' : 'Ver';
+  }
+
+  async function toggleCardStatus(id) {
+    const idx = subs.findIndex(s => s.id === id);
+    if (idx === -1) return;
+    subs[idx].active = !subs[idx].active;
+    render();
+    setSyncState('syncing', 'Guardando…');
+    try {
+      await updateSubNotion(subs[idx]);
+      setSyncState('ok', `Guardado · ${now()}`);
+    } catch(e) {
+      subs[idx].active = !subs[idx].active; // revert
+      render();
+      setSyncState('error', 'Error · ' + e.message);
+    }
+  }
+
+  // ── Delete ────────────────────────────────────────────────
+  function deleteSub(id) {
+    pendingDeleteId = id;
+    document.getElementById('confirm-overlay').classList.add('open');
+  }
+
+  async function confirmDelete() {
+    const id = pendingDeleteId;
+    pendingDeleteId = null;
+    document.getElementById('confirm-overlay').classList.remove('open');
+    setSyncState('syncing', 'Eliminando…');
+    try {
+      await deleteSubNotion(id);
+      subs = subs.filter(s => s.id !== id);
+      setSyncState('ok', `Eliminado · ${now()}`);
+      render();
+    } catch(e) {
+      setSyncState('error', 'Error · ' + e.message);
+    }
+  }
+
+  function cancelDelete() {
+    pendingDeleteId = null;
+    document.getElementById('confirm-overlay').classList.remove('open');
+  }
+
+  // ── Modal ─────────────────────────────────────────────────
+  function openModal(id = null) {
+    editId = id;
+    toggleState = true;
+    document.getElementById('modal-title').textContent = id ? 'Editar suscripción' : 'Nueva suscripción';
+    if (id) {
+      const s = subs.find(x => x.id === id);
+      document.getElementById('f-name').value         = s.name;
+      document.getElementById('f-titular').value      = s.titular;
+      document.getElementById('f-cost').value         = s.cost;
+      document.getElementById('f-cancel-url').value   = s.cancelUrl;
+      document.getElementById('f-user').value         = s.user;
+      document.getElementById('f-pass').value         = s.pass;
+      document.getElementById('f-notes').value        = s.notes;
+      document.getElementById('f-renewal-type').value = s.renewalType === 'annual' ? 'Anual' : 'Mensual';
+      document.getElementById('f-renewal-day').value  = s.renewalDay;
+      document.getElementById('f-renewal-date').value = s.renewalDate;
+      toggleState = s.active;
+    } else {
+      ['f-name','f-titular','f-cost','f-cancel-url','f-user','f-pass','f-notes','f-renewal-day','f-renewal-date']
+        .forEach(fid => document.getElementById(fid).value = '');
+      document.getElementById('f-renewal-type').value = 'Mensual';
+      toggleState = true;
+    }
+    document.getElementById('f-pass').type = 'password';
+    document.getElementById('f-eye-btn').textContent = 'Mostrar';
+    updateToggleUI();
+    onRenewalChange();
+    document.getElementById('modal').classList.add('open');
+    setTimeout(() => document.getElementById('f-name').focus(), 80);
+  }
+
+  function editSub(id) { openModal(id); }
+
+  function closeModal() {
+    document.getElementById('modal').classList.remove('open');
+    editId = null;
+  }
+
+  function toggleStatus()  { toggleState = !toggleState; updateToggleUI(); }
+
+  function updateToggleUI() {
+    document.getElementById('f-toggle').className = 'toggle' + (toggleState ? ' on' : '');
+    document.getElementById('f-toggle-label').textContent = toggleState ? 'Activa' : 'Inactiva';
+  }
+
+  function onRenewalChange() {
+    const isAnnual = document.getElementById('f-renewal-type').value === 'Anual';
+    document.getElementById('wrap-monthly-day').style.display  = isAnnual ? 'none' : '';
+    document.getElementById('wrap-annual-date').style.display  = isAnnual ? '' : 'none';
+  }
+
+  function toggleFormPass() {
+    const inp = document.getElementById('f-pass');
+    const btn = document.getElementById('f-eye-btn');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+    btn.textContent = inp.type === 'password' ? 'Mostrar' : 'Ocultar';
+  }
+
+  async function saveSubscription() {
+    const name = document.getElementById('f-name').value.trim();
+    if (!name) { document.getElementById('f-name').focus(); return; }
+
+    const entry = {
+      id:          editId || '',
+      name,
+      titular:     document.getElementById('f-titular').value.trim(),
+      cost:        parseFloat(document.getElementById('f-cost').value) || 0,
+      cancelUrl:   document.getElementById('f-cancel-url').value.trim(),
+      user:        document.getElementById('f-user').value.trim(),
+      pass:        document.getElementById('f-pass').value,
+      notes:       document.getElementById('f-notes').value.trim(),
+      renewalType: document.getElementById('f-renewal-type').value === 'Anual' ? 'annual' : 'monthly',
+      renewalDay:  document.getElementById('f-renewal-day').value,
+      renewalDate: document.getElementById('f-renewal-date').value,
+      active:      toggleState,
+    };
+
+    const btn = document.getElementById('btn-save');
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    closeModal();
+    setSyncState('syncing', 'Guardando en Notion…');
+
+    try {
+      if (editId) {
+        await updateSubNotion(entry);
+        const idx = subs.findIndex(s => s.id === editId);
+        if (idx !== -1) subs[idx] = entry;
+      } else {
+        const newId = await createSub(entry);
+        entry.id = newId;
+        subs.unshift(entry);
+      }
+      setSyncState('ok', `Guardado · ${now()}`);
+      render();
+    } catch(e) {
+      setSyncState('error', 'Error · ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Guardar suscripción';
+    }
+  }
+
+  // ── Filter tabs ───────────────────────────────────────────
+  document.querySelectorAll('.filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filter = btn.dataset.filter;
+      render();
+    });
+  });
+
+  document.getElementById('modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal')) closeModal();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeModal(); cancelDelete(); }
+  });
+
+  document.getElementById('token-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveToken();
+  });
+
+  // ── INIT ──────────────────────────────────────────────────
+  async function initApp() {
+    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+    await loadSubs();
+  }
+
+  initApp();
+</script>
+</body>
+</html>
