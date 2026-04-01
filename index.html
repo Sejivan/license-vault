@@ -312,32 +312,26 @@
 </div>
 
 <script>
-  // ── CONFIG ────────────────────────────────────────────────
+  // ================================================================
+  // LICENSE VAULT — clean rewrite, no inline onclick ID passing
+  // ================================================================
+
   const DATABASE_ID = 'f175b725a63940ae9e24e1a2f2529528';
   const PROXY_BASE  = 'https://notion-proxy.josivansanchez.workers.dev';
 
   // ── State ─────────────────────────────────────────────────
-  let subs = [];
-  let filter = 'all';
-  let editId = null;
-  let toggleState = true;
+  let subs            = [];   // array of sub objects, each has a .id (Notion UUID)
+  let filter          = 'all';
+  let editingId       = null; // Notion page ID of the sub being edited, or null
+  let formToggle      = true;
   let pendingDeleteId = null;
-  let token = '';
 
-  // ── Token management ──────────────────────────────────────
-  function getToken() { return ''; } // Token lives in the Worker, not here
-  function saveToken() { initApp(); } // Skip token screen, go straight to app
-  function resetToken() {
-    document.getElementById('main-app').style.display = 'none';
-    document.getElementById('setup-screen').style.display = 'flex';
-  }
-
-  // ── Notion REST via Cloudflare Worker proxy ───────────────
+  // ── Notion API ────────────────────────────────────────────
   async function notionRequest(method, path, body) {
     const res = await fetch(PROXY_BASE + path, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -346,65 +340,57 @@
     return res.json();
   }
 
-  // Map a Notion page result → our internal sub object
   function pageToSub(page) {
     const p = page.properties;
-    const getTitle  = k => p[k]?.title?.[0]?.plain_text || '';
-    const getText   = k => p[k]?.rich_text?.[0]?.plain_text || '';
-    const getSelect = k => p[k]?.select?.name || '';
-    const getNum    = k => p[k]?.number ?? 0;
-    const getUrl    = k => p[k]?.url || '';
-    const getDate   = k => p[k]?.date?.start || '';
-
+    const title  = k => p[k]?.title?.[0]?.plain_text  || '';
+    const text   = k => p[k]?.rich_text?.[0]?.plain_text || '';
+    const select = k => p[k]?.select?.name || '';
+    const num    = k => p[k]?.number ?? 0;
+    const url    = k => p[k]?.url || '';
+    const date   = k => p[k]?.date?.start || '';
     return {
       id:          page.id,
-      name:        getTitle('Nombre'),
-      active:      getSelect('Estado') !== 'Inactiva',
-      titular:     getText('Titular'),
-      cost:        getNum('Costo'),
-      renewalType: getSelect('Renovación') === 'Anual' ? 'annual' : 'monthly',
-      renewalDay:  getNum('Día de renovación') || '',
-      renewalDate: getDate('Fecha de renovación anual'),
-      cancelUrl:   getUrl('Enlace de cancelación'),
-      user:        getText('Usuario'),
-      pass:        getText('Contraseña'),
-      notes:       getText('Notas'),
+      name:        title('Nombre'),
+      active:      select('Estado') !== 'Inactiva',
+      titular:     text('Titular'),
+      cost:        num('Costo'),
+      renewalType: select('Renovación') === 'Anual' ? 'annual' : 'monthly',
+      renewalDay:  num('Día de renovación') || '',
+      renewalDate: date('Fecha de renovación anual'),
+      cancelUrl:   url('Enlace de cancelación'),
+      user:        text('Usuario'),
+      pass:        text('Contraseña'),
+      notes:       text('Notas'),
     };
   }
 
-  // Map our sub object → Notion properties payload
-  function subToProperties(s) {
+  function subToProps(s) {
     const props = {
-      'Nombre':   { title: [{ text: { content: s.name } }] },
-      'Estado':   { select: { name: s.active ? 'Activa' : 'Inactiva' } },
-      'Titular':  { rich_text: [{ text: { content: s.titular || '' } }] },
-      'Costo':    { number: parseFloat(s.cost) || 0 },
-      'Renovación': { select: { name: s.renewalType === 'annual' ? 'Anual' : 'Mensual' } },
-      'Día de renovación': { number: s.renewalType === 'monthly' && s.renewalDay ? parseInt(s.renewalDay) : null },
-      'Enlace de cancelación': { url: s.cancelUrl || null },
-      'Usuario':   { rich_text: [{ text: { content: s.user  || '' } }] },
-      'Contraseña':{ rich_text: [{ text: { content: s.pass  || '' } }] },
-      'Notas':     { rich_text: [{ text: { content: s.notes || '' } }] },
+      'Nombre':                { title:     [{ text: { content: s.name      || '' } }] },
+      'Estado':                { select:    { name: s.active ? 'Activa' : 'Inactiva' } },
+      'Titular':               { rich_text: [{ text: { content: s.titular   || '' } }] },
+      'Costo':                 { number:    parseFloat(s.cost) || 0 },
+      'Renovación':            { select:    { name: s.renewalType === 'annual' ? 'Anual' : 'Mensual' } },
+      'Día de renovación':     { number:    (s.renewalType === 'monthly' && s.renewalDay) ? parseInt(s.renewalDay) : null },
+      'Enlace de cancelación': { url:       s.cancelUrl || null },
+      'Usuario':               { rich_text: [{ text: { content: s.user      || '' } }] },
+      'Contraseña':            { rich_text: [{ text: { content: s.pass      || '' } }] },
+      'Notas':                 { rich_text: [{ text: { content: s.notes     || '' } }] },
+      'Fecha de renovación anual': (s.renewalType === 'annual' && s.renewalDate)
+        ? { date: { start: s.renewalDate } }
+        : { date: null },
     };
-    if (s.renewalType === 'annual' && s.renewalDate) {
-      props['Fecha de renovación anual'] = { date: { start: s.renewalDate } };
-    } else {
-      props['Fecha de renovación anual'] = { date: null };
-    }
     return props;
   }
 
-  // ── LOAD ──────────────────────────────────────────────────
   async function loadSubs() {
     setSyncState('syncing', 'Sincronizando…');
     try {
       const data = await notionRequest('POST', `/v1/databases/${DATABASE_ID}/query`, {
         page_size: 100,
-        sorts: [{ timestamp: 'created_time', direction: 'descending' }]
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
       });
-      subs = data.results
-        .filter(p => !p.archived && !p.in_trash)
-        .map(pageToSub);
+      subs = data.results.filter(p => !p.archived && !p.in_trash).map(pageToSub);
       setSyncState('ok', `Sincronizado · ${now()}`);
       render();
     } catch(e) {
@@ -413,24 +399,19 @@
     }
   }
 
-  // ── CREATE ────────────────────────────────────────────────
-  async function createSub(s) {
+  async function apiCreate(s) {
     const page = await notionRequest('POST', '/v1/pages', {
       parent: { database_id: DATABASE_ID },
-      properties: subToProperties(s),
+      properties: subToProps(s),
     });
     return page.id;
   }
 
-  // ── UPDATE ────────────────────────────────────────────────
-  async function updateSubNotion(s) {
-    await notionRequest('PATCH', `/v1/pages/${s.id}`, {
-      properties: subToProperties(s),
-    });
+  async function apiUpdate(s) {
+    await notionRequest('PATCH', `/v1/pages/${s.id}`, { properties: subToProps(s) });
   }
 
-  // ── DELETE (archive) ──────────────────────────────────────
-  async function deleteSubNotion(id) {
+  async function apiDelete(id) {
     await notionRequest('PATCH', `/v1/pages/${id}`, { archived: true });
   }
 
@@ -440,14 +421,16 @@
   }
 
   function esc(s) {
-    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   function monthlyCost(s) { return s.renewalType === 'annual' ? s.cost / 12 : s.cost; }
 
   function renewalLabel(s) {
     if (s.renewalType === 'annual') {
-      const d = s.renewalDate ? new Date(s.renewalDate + 'T12:00:00').toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }) : '';
+      const d = s.renewalDate
+        ? new Date(s.renewalDate + 'T12:00:00').toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })
+        : '';
       return 'Anual' + (d ? ` · ${d}` : '');
     }
     return 'Mensual' + (s.renewalDay ? ` · día ${s.renewalDay}` : '');
@@ -458,27 +441,24 @@
     document.getElementById('sync-label').textContent = label;
   }
 
-  function copyText(text, btnId) {
+  function copyText(text, btnEl) {
     navigator.clipboard.writeText(text).then(() => {
-      const btn = document.getElementById(btnId);
-      if (!btn) return;
-      const orig = btn.textContent;
-      btn.textContent = 'Copiado';
-      btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
+      const orig = btnEl.textContent;
+      btnEl.textContent = 'Copiado';
+      btnEl.classList.add('copied');
+      setTimeout(() => { btnEl.textContent = orig; btnEl.classList.remove('copied'); }, 1800);
     });
   }
 
-  // ── RENDER ────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────
   function render() {
     const grid = document.getElementById('cards-grid');
     let visible = subs;
     if (filter === 'active')   visible = subs.filter(s => s.active);
     if (filter === 'inactive') visible = subs.filter(s => !s.active);
 
-    const active = subs.filter(s => s.active);
-    const totalCost = active.reduce((a, s) => a + monthlyCost(s), 0);
-
+    const active    = subs.filter(s => s.active);
+    const totalCost = active.reduce((acc, s) => acc + monthlyCost(s), 0);
     document.getElementById('stat-total').textContent    = subs.length;
     document.getElementById('stat-active').textContent   = active.length;
     document.getElementById('stat-inactive').textContent = subs.length - active.length;
@@ -489,41 +469,43 @@
       return;
     }
 
-    // Use numeric index as DOM key — avoids any escaping issues with Notion UUIDs
-    grid.innerHTML = visible.map((s, i) => {
-      // Find real index in subs array (visible may be filtered)
-      const idx = subs.indexOf(s);
-      const k = idx; // safe numeric key
-
-      const mc = monthlyCost(s);
+    // Each card gets a data-notion-id attribute with the raw Notion UUID.
+    // All actions are handled via event delegation on the grid — no inline onclick.
+    grid.innerHTML = visible.map(s => {
+      const mc        = monthlyCost(s);
       const priceNote = s.renewalType === 'annual'
         ? `<span class="price-note">/ mes &nbsp;($${s.cost.toFixed(2)} anual)</span>`
         : `<span class="price-note">/ mes</span>`;
-      const hasCreds = s.user || s.pass || s.notes;
+      const hasCreds  = s.user || s.pass || s.notes;
+      const nid       = esc(s.id); // safe for HTML attributes (UUIDs only have hex + dashes, no special chars)
 
       const userRow = s.user ? `
         <div class="cred-row">
           <span class="cred-label">Usuario</span>
-          <span class="cred-value">${esc(s.user)}</span>
-          <button class="btn-cred-action" id="cu-${k}" data-text="${esc(s.user)}" data-btn="cu-${k}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
+          <span class="cred-value cred-user-val">${esc(s.user)}</span>
+          <button class="btn-cred-action btn-copy-user">Copiar</button>
         </div>` : '';
 
       const passRow = s.pass ? `
         <div class="cred-row">
           <span class="cred-label">Contraseña</span>
-          <span class="cred-value masked" id="pv-${k}" data-pass="${esc(s.pass)}">••••••••••••</span>
-          <button class="btn-cred-action" id="cp-${k}" data-text="${esc(s.pass)}" data-btn="cp-${k}" onclick="copyText(this.dataset.text,this.dataset.btn)">Copiar</button>
-          <button class="btn-cred-action" data-k="${k}" onclick="togglePassView(this.dataset.k,this)">Ver</button>
+          <span class="cred-value masked cred-pass-val" data-pass="${esc(s.pass)}">••••••••••••</span>
+          <button class="btn-cred-action btn-copy-pass">Copiar</button>
+          <button class="btn-cred-action btn-toggle-pass">Ver</button>
         </div>` : '';
 
-      const notesRow = s.notes ? `<div class="cred-notes">${esc(s.notes)}</div>` : '';
-      const credsHTML = hasCreds ? `<div class="creds-section" id="cr-${k}">${userRow}${passRow}${notesRow}</div>` : '';
+      const notesRow  = s.notes ? `<div class="cred-notes">${esc(s.notes)}</div>` : '';
+      const credsHTML = hasCreds
+        ? `<div class="creds-section" data-creds-id="${nid}">${userRow}${passRow}${notesRow}</div>`
+        : '';
 
       return `
-      <div class="sub-card ${s.active ? '' : 'inactive'}">
+      <div class="sub-card ${s.active ? '' : 'inactive'}" data-notion-id="${nid}">
         <div class="card-top">
           <div class="card-name">${esc(s.name)}</div>
-          <button class="badge ${s.active ? 'active' : 'inactive'}" data-k="${k}" onclick="toggleCardStatus(this.dataset.k)" title="Clic para cambiar estado">${s.active ? 'Activa' : 'Inactiva'}</button>
+          <button class="badge ${s.active ? 'active' : 'inactive'} btn-toggle-status">
+            ${s.active ? 'Activa' : 'Inactiva'}
+          </button>
         </div>
         <div class="card-meta">
           ${s.titular ? `<span class="tag-titular">${esc(s.titular)}</span><span style="color:var(--border2)">·</span>` : ''}
@@ -532,64 +514,83 @@
         <div class="card-price">$${mc.toFixed(2)} ${priceNote}</div>
         ${credsHTML}
         <div class="card-actions">
-          ${hasCreds ? `<button class="btn-sm" data-k="${k}" onclick="toggleCreds(this.dataset.k)">Credenciales</button>` : ''}
+          ${hasCreds ? `<button class="btn-sm btn-show-creds">Credenciales</button>` : ''}
           ${s.cancelUrl ? `<a class="btn-sm cancel-link" href="${esc(s.cancelUrl)}" target="_blank" rel="noopener noreferrer">Cancelar ↗</a>` : ''}
           <div class="card-right-actions">
-            <button class="btn-sm" data-k="${k}" onclick="editSubByKey(this.dataset.k)">Editar</button>
-            <button class="btn-sm danger" data-k="${k}" onclick="deleteSubByKey(this.dataset.k)">Eliminar</button>
+            <button class="btn-sm btn-edit">Editar</button>
+            <button class="btn-sm danger btn-delete">Eliminar</button>
           </div>
         </div>
       </div>`;
     }).join('');
   }
 
-  // ── Card interactions (all use numeric index) ─────────────
-  function toggleCreds(k) {
-    const el = document.getElementById('cr-' + k);
-    if (el) el.classList.toggle('visible');
-  }
+  // ── Event delegation on cards grid ────────────────────────
+  // One listener handles ALL card button clicks.
+  // We walk up from the clicked element to find the .sub-card and its data-notion-id.
+  document.getElementById('cards-grid').addEventListener('click', function(e) {
+    const btn  = e.target.closest('button, a');
+    if (!btn) return;
+    const card = btn.closest('[data-notion-id]');
+    if (!card) return;
+    const notionId = card.getAttribute('data-notion-id');
+    const sub = subs.find(s => s.id === notionId);
 
-  function togglePassView(k, btn) {
-    const el = document.getElementById('pv-' + k);
-    if (!el) return;
-    const hidden = el.classList.contains('masked');
-    el.textContent = hidden ? el.dataset.pass : '••••••••••••';
-    el.classList.toggle('masked');
-    if (btn) btn.textContent = hidden ? 'Ocultar' : 'Ver';
-  }
+    if (btn.classList.contains('btn-toggle-status')) {
+      if (sub) doToggleStatus(sub);
 
-  async function toggleCardStatus(k) {
-    const s = subs[parseInt(k)];
-    if (!s) return;
-    s.active = !s.active;
+    } else if (btn.classList.contains('btn-show-creds')) {
+      const credsEl = card.querySelector('.creds-section');
+      if (credsEl) credsEl.classList.toggle('visible');
+
+    } else if (btn.classList.contains('btn-copy-user')) {
+      const val = btn.closest('.cred-row').querySelector('.cred-user-val');
+      if (val) copyText(val.textContent.trim(), btn);
+
+    } else if (btn.classList.contains('btn-copy-pass')) {
+      const val = btn.closest('.cred-row').querySelector('.cred-pass-val');
+      if (val) copyText(val.dataset.pass, btn);
+
+    } else if (btn.classList.contains('btn-toggle-pass')) {
+      const val = btn.closest('.cred-row').querySelector('.cred-pass-val');
+      if (!val) return;
+      const hidden = val.classList.contains('masked');
+      val.textContent = hidden ? val.dataset.pass : '••••••••••••';
+      val.classList.toggle('masked');
+      btn.textContent = hidden ? 'Ocultar' : 'Ver';
+
+    } else if (btn.classList.contains('btn-edit')) {
+      openModal(notionId);
+
+    } else if (btn.classList.contains('btn-delete')) {
+      pendingDeleteId = notionId;
+      document.getElementById('confirm-overlay').classList.add('open');
+    }
+  });
+
+  // ── Toggle status ─────────────────────────────────────────
+  async function doToggleStatus(sub) {
+    sub.active = !sub.active;
     render();
     setSyncState('syncing', 'Guardando…');
     try {
-      await updateSubNotion(s);
+      await apiUpdate(sub);
       setSyncState('ok', `Guardado · ${now()}`);
     } catch(e) {
-      s.active = !s.active;
+      sub.active = !sub.active; // revert
       render();
       setSyncState('error', 'Error · ' + e.message);
     }
   }
 
-  function editSubByKey(k)   { openModal(subs[parseInt(k)].id); }
-  function deleteSubByKey(k) { deleteSub(subs[parseInt(k)].id); }
-
   // ── Delete ────────────────────────────────────────────────
-  function deleteSub(id) {
-    pendingDeleteId = id;
-    document.getElementById('confirm-overlay').classList.add('open');
-  }
-
   async function confirmDelete() {
     const id = pendingDeleteId;
     pendingDeleteId = null;
     document.getElementById('confirm-overlay').classList.remove('open');
     setSyncState('syncing', 'Eliminando…');
     try {
-      await deleteSubNotion(id);
+      await apiDelete(id);
       subs = subs.filter(s => s.id !== id);
       setSyncState('ok', `Eliminado · ${now()}`);
       render();
@@ -604,12 +605,14 @@
   }
 
   // ── Modal ─────────────────────────────────────────────────
-  function openModal(id = null) {
-    editId = id;
-    toggleState = true;
-    document.getElementById('modal-title').textContent = id ? 'Editar suscripción' : 'Nueva suscripción';
-    if (id) {
-      const s = subs.find(x => x.id === id);
+  function openModal(notionId = null) {
+    editingId  = notionId; // store the real Notion UUID directly in JS — never in the DOM
+    formToggle = true;
+    document.getElementById('modal-title').textContent = notionId ? 'Editar suscripción' : 'Nueva suscripción';
+
+    if (notionId) {
+      const s = subs.find(x => x.id === notionId);
+      if (!s) { console.error('Sub not found:', notionId); return; }
       document.getElementById('f-name').value         = s.name;
       document.getElementById('f-titular').value      = s.titular;
       document.getElementById('f-cost').value         = s.cost;
@@ -620,13 +623,14 @@
       document.getElementById('f-renewal-type').value = s.renewalType === 'annual' ? 'Anual' : 'Mensual';
       document.getElementById('f-renewal-day').value  = s.renewalDay;
       document.getElementById('f-renewal-date').value = s.renewalDate;
-      toggleState = s.active;
+      formToggle = s.active;
     } else {
       ['f-name','f-titular','f-cost','f-cancel-url','f-user','f-pass','f-notes','f-renewal-day','f-renewal-date']
-        .forEach(fid => document.getElementById(fid).value = '');
+        .forEach(id => { document.getElementById(id).value = ''; });
       document.getElementById('f-renewal-type').value = 'Mensual';
-      toggleState = true;
+      formToggle = true;
     }
+
     document.getElementById('f-pass').type = 'password';
     document.getElementById('f-eye-btn').textContent = 'Mostrar';
     updateToggleUI();
@@ -635,24 +639,22 @@
     setTimeout(() => document.getElementById('f-name').focus(), 80);
   }
 
-  function editSub(id) { openModal(id); }
-
   function closeModal() {
     document.getElementById('modal').classList.remove('open');
-    editId = null;
+    // NOTE: we do NOT clear editingId here — saveSubscription reads it after closeModal
   }
 
-  function toggleStatus()  { toggleState = !toggleState; updateToggleUI(); }
+  function toggleStatus()  { formToggle = !formToggle; updateToggleUI(); }
 
   function updateToggleUI() {
-    document.getElementById('f-toggle').className = 'toggle' + (toggleState ? ' on' : '');
-    document.getElementById('f-toggle-label').textContent = toggleState ? 'Activa' : 'Inactiva';
+    document.getElementById('f-toggle').className       = 'toggle' + (formToggle ? ' on' : '');
+    document.getElementById('f-toggle-label').textContent = formToggle ? 'Activa' : 'Inactiva';
   }
 
   function onRenewalChange() {
-    const isAnnual = document.getElementById('f-renewal-type').value === 'Anual';
-    document.getElementById('wrap-monthly-day').style.display  = isAnnual ? 'none' : '';
-    document.getElementById('wrap-annual-date').style.display  = isAnnual ? '' : 'none';
+    const annual = document.getElementById('f-renewal-type').value === 'Anual';
+    document.getElementById('wrap-monthly-day').style.display = annual ? 'none' : '';
+    document.getElementById('wrap-annual-date').style.display = annual ? '' : 'none';
   }
 
   function toggleFormPass() {
@@ -666,11 +668,12 @@
     const name = document.getElementById('f-name').value.trim();
     if (!name) { document.getElementById('f-name').focus(); return; }
 
-    // Capture editId BEFORE closing modal (closeModal sets editId to null)
-    const currentEditId = editId;
+    // Read editingId NOW, before anything else
+    const isEdit  = editingId !== null;
+    const theId   = editingId;
 
     const entry = {
-      id:          currentEditId || '',
+      id:          theId || '',
       name,
       titular:     document.getElementById('f-titular').value.trim(),
       cost:        parseFloat(document.getElementById('f-cost').value) || 0,
@@ -681,23 +684,26 @@
       renewalType: document.getElementById('f-renewal-type').value === 'Anual' ? 'annual' : 'monthly',
       renewalDay:  document.getElementById('f-renewal-day').value,
       renewalDate: document.getElementById('f-renewal-date').value,
-      active:      toggleState,
+      active:      formToggle,
     };
 
-    const btn = document.getElementById('btn-save');
-    btn.disabled = true;
-    btn.textContent = 'Guardando…';
+    // Close modal and reset editingId AFTER capturing all values
     closeModal();
-    setSyncState('syncing', 'Guardando en Notion…');
+    editingId = null;
+
+    const saveBtn = document.getElementById('btn-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Guardando…';
+    setSyncState('syncing', isEdit ? 'Actualizando en Notion…' : 'Guardando en Notion…');
 
     try {
-      if (currentEditId) {
-        await updateSubNotion(entry);
-        const idx = subs.findIndex(s => s.id === currentEditId);
+      if (isEdit) {
+        await apiUpdate(entry);
+        const idx = subs.findIndex(s => s.id === theId);
         if (idx !== -1) subs[idx] = entry;
       } else {
-        const newId = await createSub(entry);
-        entry.id = newId;
+        const newId  = await apiCreate(entry);
+        entry.id     = newId;
         subs.unshift(entry);
       }
       setSyncState('ok', `Guardado · ${now()}`);
@@ -705,8 +711,8 @@
     } catch(e) {
       setSyncState('error', 'Error · ' + e.message);
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Guardar suscripción';
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Guardar suscripción';
     }
   }
 
@@ -721,21 +727,23 @@
   });
 
   document.getElementById('modal').addEventListener('click', e => {
-    if (e.target === document.getElementById('modal')) closeModal();
+    if (e.target === document.getElementById('modal')) { closeModal(); editingId = null; }
   });
 
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeModal(); cancelDelete(); }
+    if (e.key === 'Escape') { closeModal(); editingId = null; cancelDelete(); }
   });
 
-  document.getElementById('token-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') saveToken();
-  });
+  // ── Token / init (token lives in Worker) ──────────────────
+  function saveToken()  { initApp(); }
+  function resetToken() {
+    document.getElementById('main-app').style.display = 'none';
+    document.getElementById('setup-screen').style.display = 'flex';
+  }
 
-  // ── INIT ──────────────────────────────────────────────────
   async function initApp() {
     document.getElementById('setup-screen').style.display = 'none';
-    document.getElementById('main-app').style.display = 'block';
+    document.getElementById('main-app').style.display     = 'block';
     await loadSubs();
   }
 
