@@ -659,8 +659,11 @@
     const name = document.getElementById('f-name').value.trim();
     if (!name) { document.getElementById('f-name').focus(); return; }
 
+    // Capture editId BEFORE closing modal (closeModal sets editId to null)
+    const currentEditId = editId;
+
     const entry = {
-      id:          editId || '',
+      id:          currentEditId || '',
       name,
       titular:     document.getElementById('f-titular').value.trim(),
       cost:        parseFloat(document.getElementById('f-cost').value) || 0,
@@ -681,9 +684,9 @@
     setSyncState('syncing', 'Guardando en Notion…');
 
     try {
-      if (editId) {
+      if (currentEditId) {
         await updateSubNotion(entry);
-        const idx = subs.findIndex(s => s.id === editId);
+        const idx = subs.findIndex(s => s.id === currentEditId);
         if (idx !== -1) subs[idx] = entry;
       } else {
         const newId = await createSub(entry);
